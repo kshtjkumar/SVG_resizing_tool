@@ -48,3 +48,4 @@ echo ""
 echo "4. Align panels in a composite figure:"
 echo "   python3 align_axes.py composite.svg --align-mode patch-bottom"
 echo ""
+
