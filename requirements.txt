@@ -1,4 +1,3 @@
 # SVG Resizing Tool - Requirements
 # This tool uses Python 3.7+ standard library only
 # No external dependencies required
-
