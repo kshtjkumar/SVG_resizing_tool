@@ -209,8 +209,7 @@ def extract_panel(svg_path, panel_label, output_path):
         svg_ns = "http://www.w3.org/2000/svg"
         ET.register_namespace('', svg_ns)
         
-        new_root = ET.Element('svg', {
-            'xmlns': svg_ns,
+        new_root = ET.Element('{%s}svg' % svg_ns, {
             'width': str(width),
             'height': str(height),
             'viewBox': f'0 0 {width} {height}'

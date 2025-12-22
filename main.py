@@ -106,8 +106,7 @@ def create_composite_svg(panels, output_path, args):
     # Create root SVG
     svg_ns = "http://www.w3.org/2000/svg"
     ET.register_namespace('', svg_ns)
-    root = ET.Element('svg', {
-        'xmlns': svg_ns,
+    root = ET.Element('{%s}svg' % svg_ns, {
         'width': f'{total_width}',
         'height': f'{total_height}',
         'viewBox': f'0 0 {total_width} {total_height}'
