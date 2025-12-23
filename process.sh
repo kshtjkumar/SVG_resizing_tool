@@ -288,19 +288,22 @@ fi
 if [ -n "$LAYOUT" ]; then
     COMMON_ARGS="$COMMON_ARGS --outer-layout $LAYOUT"
 fi
+
+# Build additional arguments for main.py (combine mode)
+MAIN_ARGS="$COMMON_ARGS"
 if [ "$ADD_LABELS" = true ]; then
-    COMMON_ARGS="$COMMON_ARGS --add-panel-label --panel-label-first $LABEL_FIRST --panel-label-font-size $LABEL_SIZE"
+    MAIN_ARGS="$MAIN_ARGS --add-panel-label --panel-label-first $LABEL_FIRST --panel-label-font-size $LABEL_SIZE"
 fi
 if [ "$ALIGN" = true ]; then
-    COMMON_ARGS="$COMMON_ARGS --align --align-mode $ALIGN_MODE"
+    MAIN_ARGS="$MAIN_ARGS --align --align-mode $ALIGN_MODE"
     if [ "$ALIGN_XSPINE" = true ]; then
-        COMMON_ARGS="$COMMON_ARGS --align-xspine-equalize"
+        MAIN_ARGS="$MAIN_ARGS --align-xspine-equalize"
     fi
     if [ "$ALIGN_YSPINE" = true ]; then
-        COMMON_ARGS="$COMMON_ARGS --align-yspine-equalize"
+        MAIN_ARGS="$MAIN_ARGS --align-yspine-equalize"
     fi
     if [ "$AUTO_MATCH_SCALE" = true ]; then
-        COMMON_ARGS="$COMMON_ARGS --auto-match-scale"
+        MAIN_ARGS="$MAIN_ARGS --auto-match-scale"
     fi
 fi
 
@@ -313,7 +316,7 @@ if [ "$COMBINE" = true ]; then
     OUTPUT_FILE="$OUTPUT_DIR/combined_output.svg"
     
     # Build command
-    CMD="python3 \"$SCRIPT_DIR/main.py\" \"$INPUT_DIR\"/*.svg --output \"$OUTPUT_FILE\" --max-per-row $MAX_PER_ROW --col-gap $COL_GAP --row-gap $ROW_GAP --outer-pad $OUTER_PAD $COMMON_ARGS"
+    CMD="python3 \"$SCRIPT_DIR/main.py\" \"$INPUT_DIR\"/*.svg --output \"$OUTPUT_FILE\" --max-per-row $MAX_PER_ROW --col-gap $COL_GAP --row-gap $ROW_GAP --outer-pad $OUTER_PAD $MAIN_ARGS"
     
     print_info "Running: main.py with $SVG_COUNT input file(s)"
     
@@ -328,39 +331,67 @@ else
     # Individual mode - process each file separately
     print_info "Processing mode: Individual files"
     
-    # Process each SVG file
-    PROCESSED=0
-    FAILED=0
-    
-    for svg_file in "$INPUT_DIR"/*.svg; do
-        if [ ! -f "$svg_file" ]; then
-            continue
-        fi
+    # Check if publisher and layout are set (required for panel_frame_fit.py)
+    if [ -z "$PUBLISHER" ] || [ -z "$LAYOUT" ]; then
+        print_warning "Publisher and layout not specified. Files will be copied to output/ without processing."
+        print_info "Use --publisher and --layout options to resize files to publisher specifications."
+        echo ""
         
-        filename=$(basename "$svg_file")
-        filename_noext="${filename%.svg}"
-        output_file="$OUTPUT_DIR/${filename_noext}_processed.svg"
-        
-        print_info "Processing: $filename"
-        
-        # Build command for single file
-        CMD="python3 \"$SCRIPT_DIR/panel_frame_fit.py\" \"$svg_file\" --output \"$output_file\" --outer-pad $OUTER_PAD $COMMON_ARGS"
-        
-        # Execute command
-        if eval $CMD 2>&1 | grep -v "^$"; then
+        # Just copy files
+        PROCESSED=0
+        for svg_file in "$INPUT_DIR"/*.svg; do
+            if [ ! -f "$svg_file" ]; then
+                continue
+            fi
+            
+            filename=$(basename "$svg_file")
+            filename_noext="${filename%.svg}"
+            output_file="$OUTPUT_DIR/${filename_noext}_processed.svg"
+            
+            print_info "Copying: $filename"
+            cp "$svg_file" "$output_file"
             print_success "  Saved to: $output_file"
             PROCESSED=$((PROCESSED + 1))
-        else
-            print_error "  Failed to process $filename"
-            FAILED=$((FAILED + 1))
+        done
+        
+        echo ""
+        print_success "Copying complete!"
+        echo "  Copied: $PROCESSED file(s)"
+    else
+        # Process each SVG file with panel_frame_fit.py
+        PROCESSED=0
+        FAILED=0
+        
+        for svg_file in "$INPUT_DIR"/*.svg; do
+            if [ ! -f "$svg_file" ]; then
+                continue
+            fi
+            
+            filename=$(basename "$svg_file")
+            filename_noext="${filename%.svg}"
+            output_file="$OUTPUT_DIR/${filename_noext}_processed.svg"
+            
+            print_info "Processing: $filename"
+            
+            # Build command for single file
+            CMD="python3 \"$SCRIPT_DIR/panel_frame_fit.py\" \"$svg_file\" --output \"$output_file\" $COMMON_ARGS"
+            
+            # Execute command
+            if eval $CMD 2>&1 | grep -v "^$"; then
+                print_success "  Saved to: $output_file"
+                PROCESSED=$((PROCESSED + 1))
+            else
+                print_error "  Failed to process $filename"
+                FAILED=$((FAILED + 1))
+            fi
+        done
+        
+        echo ""
+        print_success "Processing complete!"
+        echo "  Processed: $PROCESSED file(s)"
+        if [ "$FAILED" -gt 0 ]; then
+            print_warning "  Failed: $FAILED file(s)"
         fi
-    done
-    
-    echo ""
-    print_success "Processing complete!"
-    echo "  Processed: $PROCESSED file(s)"
-    if [ "$FAILED" -gt 0 ]; then
-        print_warning "  Failed: $FAILED file(s)"
     fi
 fi
 
