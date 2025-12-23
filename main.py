@@ -53,6 +53,204 @@ def parse_svg_dimensions(svg_root):
     return width, height
 
 
+def parse_transform(transform_str):
+    """
+    Parse SVG transform attribute and return (tx, ty, sx, sy) tuple.
+    Supports: translate(x[, y]), scale(sx[, sy]), matrix(a, b, c, d, e, f)
+    """
+    if not transform_str:
+        return (0, 0, 1, 1)
+    
+    tx, ty, sx, sy = 0, 0, 1, 1
+    
+    # Parse translate
+    translate_match = re.search(r'translate\s*\(\s*([^,\s]+)(?:\s*,\s*([^)]+))?\s*\)', transform_str)
+    if translate_match:
+        tx = float(translate_match.group(1))
+        ty = float(translate_match.group(2)) if translate_match.group(2) else 0
+    
+    # Parse scale
+    scale_match = re.search(r'scale\s*\(\s*([^,\s]+)(?:\s*,\s*([^)]+))?\s*\)', transform_str)
+    if scale_match:
+        sx = float(scale_match.group(1))
+        sy = float(scale_match.group(2)) if scale_match.group(2) else sx
+    
+    # Parse matrix (simplified - only handles translation and scale in matrix form)
+    matrix_match = re.search(r'matrix\s*\(\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^,\s]+)\s*,\s*([^)]+)\s*\)', transform_str)
+    if matrix_match:
+        a, b, c, d, e, f = [float(x) for x in matrix_match.groups()]
+        # For matrices without rotation/skew: a=sx, d=sy, e=tx, f=ty
+        sx = a
+        sy = d
+        tx = e
+        ty = f
+    
+    return (tx, ty, sx, sy)
+
+
+def get_path_bounds(path_data):
+    """
+    Parse SVG path 'd' attribute and return bounding box.
+    Returns (min_x, min_y, max_x, max_y) or None if no valid coordinates found.
+    """
+    if not path_data:
+        return None
+    
+    # Extract all numeric coordinates from path data
+    # Match numbers (including negative and decimal)
+    coords = re.findall(r'-?\d+\.?\d*', path_data)
+    if not coords:
+        return None
+    
+    coords = [float(c) for c in coords]
+    
+    # Split into x,y pairs
+    x_coords = coords[0::2]
+    y_coords = coords[1::2]
+    
+    if not x_coords or not y_coords:
+        return None
+    
+    return (min(x_coords), min(y_coords), max(x_coords), max(y_coords))
+
+
+def get_content_bounds(element, transform=(0, 0, 1, 1)):
+    """
+    Recursively calculate the actual content bounding box of SVG elements.
+    Returns (min_x, min_y, max_x, max_y) of visible content.
+    
+    Handles: rect, line, circle, ellipse, path, polygon, polyline, text, g (groups)
+    Accounts for transforms: translate, scale, matrix
+    """
+    tx, ty, sx, sy = transform
+    
+    # Parse element's own transform and combine with parent
+    elem_transform_str = element.get('transform', '')
+    if elem_transform_str:
+        etx, ety, esx, esy = parse_transform(elem_transform_str)
+        tx = tx + etx * sx
+        ty = ty + ety * sy
+        sx = sx * esx
+        sy = sy * esy
+    
+    # Get element tag without namespace
+    tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+    
+    bounds = None
+    
+    # Handle different element types
+    if tag == 'rect':
+        x = float(element.get('x', 0))
+        y = float(element.get('y', 0))
+        width = float(element.get('width', 0))
+        height = float(element.get('height', 0))
+        bounds = (x, y, x + width, y + height)
+    
+    elif tag == 'circle':
+        cx = float(element.get('cx', 0))
+        cy = float(element.get('cy', 0))
+        r = float(element.get('r', 0))
+        bounds = (cx - r, cy - r, cx + r, cy + r)
+    
+    elif tag == 'ellipse':
+        cx = float(element.get('cx', 0))
+        cy = float(element.get('cy', 0))
+        rx = float(element.get('rx', 0))
+        ry = float(element.get('ry', 0))
+        bounds = (cx - rx, cy - ry, cx + rx, cy + ry)
+    
+    elif tag == 'line':
+        x1 = float(element.get('x1', 0))
+        y1 = float(element.get('y1', 0))
+        x2 = float(element.get('x2', 0))
+        y2 = float(element.get('y2', 0))
+        bounds = (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+    
+    elif tag == 'polyline' or tag == 'polygon':
+        points_str = element.get('points', '')
+        if points_str:
+            coords = re.findall(r'-?\d+\.?\d*', points_str)
+            if coords:
+                coords = [float(c) for c in coords]
+                x_coords = coords[0::2]
+                y_coords = coords[1::2]
+                if x_coords and y_coords:
+                    bounds = (min(x_coords), min(y_coords), max(x_coords), max(y_coords))
+    
+    elif tag == 'path':
+        d = element.get('d', '')
+        bounds = get_path_bounds(d)
+    
+    elif tag == 'text':
+        x = float(element.get('x', 0))
+        y = float(element.get('y', 0))
+        # Rough estimate for text bounds (actual rendering varies by font)
+        bounds = (x, y - 10, x + 50, y + 5)
+    
+    # Apply transform to bounds
+    if bounds:
+        min_x, min_y, max_x, max_y = bounds
+        min_x = min_x * sx + tx
+        min_y = min_y * sy + ty
+        max_x = max_x * sx + tx
+        max_y = max_y * sy + ty
+        bounds = (min_x, min_y, max_x, max_y)
+    
+    # Process child elements recursively
+    for child in element:
+        child_bounds = get_content_bounds(child, (tx, ty, sx, sy))
+        if child_bounds:
+            if bounds:
+                # Merge bounds
+                bounds = (
+                    min(bounds[0], child_bounds[0]),
+                    min(bounds[1], child_bounds[1]),
+                    max(bounds[2], child_bounds[2]),
+                    max(bounds[3], child_bounds[3])
+                )
+            else:
+                bounds = child_bounds
+    
+    return bounds
+
+
+def crop_svg_to_content(svg_root):
+    """
+    Crop an SVG to its actual content bounds, removing excess whitespace.
+    Returns (cropped_root, width, height) with content starting at (0,0).
+    """
+    # Get content bounds
+    bounds = get_content_bounds(svg_root)
+    
+    if not bounds:
+        # No content found, return original
+        width, height = parse_svg_dimensions(svg_root)
+        return svg_root, width or 0, height or 0
+    
+    min_x, min_y, max_x, max_y = bounds
+    content_width = max_x - min_x
+    content_height = max_y - min_y
+    
+    # Create new root with adjusted viewBox
+    svg_ns = "http://www.w3.org/2000/svg"
+    new_root = ET.Element('{%s}svg' % svg_ns, {
+        'width': f'{content_width}',
+        'height': f'{content_height}',
+        'viewBox': f'{min_x} {min_y} {content_width} {content_height}'
+    })
+    
+    # Copy attributes except width, height, viewBox
+    for attr, value in svg_root.attrib.items():
+        if attr not in ['width', 'height', 'viewBox']:
+            new_root.set(attr, value)
+    
+    # Copy all child elements
+    for child in svg_root:
+        new_root.append(child)
+    
+    return new_root, content_width, content_height
+
+
 def create_composite_svg(panels, output_path, args):
     """Create a composite SVG from multiple panel SVGs."""
     # Load all panel SVGs
@@ -75,6 +273,16 @@ def create_composite_svg(panels, output_path, args):
     num_rows = (num_panels + max_per_row - 1) // max_per_row
     num_cols = min(num_panels, max_per_row)
     
+    # Crop panels if requested
+    if hasattr(args, 'crop') and args.crop:
+        cropped_trees = []
+        for panel_file, tree in panel_trees:
+            cropped_root, width, height = crop_svg_to_content(tree.getroot())
+            # Create new tree with cropped root
+            new_tree = ET.ElementTree(cropped_root)
+            cropped_trees.append((panel_file, new_tree))
+        panel_trees = cropped_trees
+    
     # Get panel dimensions
     panel_dims = []
     for _, tree in panel_trees:
@@ -85,6 +293,21 @@ def create_composite_svg(panels, output_path, args):
     max_width = max(w for w, h in panel_dims) if panel_dims else 0
     max_height = max(h for w, h in panel_dims) if panel_dims else 0
     
+    # Calculate gaps based on options
+    col_gap = args.col_gap
+    row_gap = args.row_gap
+    
+    # Apply --tight option (override gaps to 0)
+    if hasattr(args, 'tight') and args.tight:
+        col_gap = 0
+        row_gap = 0
+    # Apply --gap-ratio option (proportional gaps)
+    elif hasattr(args, 'gap_ratio') and args.gap_ratio is not None:
+        avg_width = sum(w for w, h in panel_dims) / len(panel_dims) if panel_dims else 0
+        avg_height = sum(h for w, h in panel_dims) / len(panel_dims) if panel_dims else 0
+        col_gap = avg_width * args.gap_ratio
+        row_gap = avg_height * args.gap_ratio
+    
     # Apply publisher sizing if specified
     if args.outer_publisher and args.outer_layout:
         publisher = args.outer_publisher
@@ -94,14 +317,14 @@ def create_composite_svg(panels, output_path, args):
             if target_width_mm:
                 target_width_px = mm_to_px(target_width_mm)
                 # Calculate scale factor
-                total_content_width = num_cols * max_width + (num_cols - 1) * args.col_gap
+                total_content_width = num_cols * max_width + (num_cols - 1) * col_gap
                 scale = target_width_px / total_content_width if total_content_width > 0 else 1.0
                 max_width *= scale
                 max_height *= scale
     
     # Calculate total dimensions
-    total_width = num_cols * max_width + (num_cols - 1) * args.col_gap + 2 * args.outer_pad
-    total_height = num_rows * max_height + (num_rows - 1) * args.row_gap + 2 * args.outer_pad
+    total_width = num_cols * max_width + (num_cols - 1) * col_gap + 2 * args.outer_pad
+    total_height = num_rows * max_height + (num_rows - 1) * row_gap + 2 * args.outer_pad
     
     # Create root SVG
     svg_ns = "http://www.w3.org/2000/svg"
@@ -117,8 +340,8 @@ def create_composite_svg(panels, output_path, args):
         row = idx // max_per_row
         col = idx % max_per_row
         
-        x = args.outer_pad + col * (max_width + args.col_gap)
-        y = args.outer_pad + row * (max_height + args.row_gap)
+        x = args.outer_pad + col * (max_width + col_gap)
+        y = args.outer_pad + row * (max_height + row_gap)
         
         # Create group for panel
         group = ET.SubElement(root, 'g', {
@@ -168,6 +391,11 @@ def main():
     parser.add_argument('--col-gap', type=float, default=10.0, help='Horizontal gap between panels (px)')
     parser.add_argument('--row-gap', type=float, default=10.0, help='Vertical gap between rows (px)')
     parser.add_argument('--outer-pad', type=float, default=10.0, help='Outer frame padding (px)')
+    
+    # Content-aware cropping options
+    parser.add_argument('--crop', action='store_true', help='Auto-crop panels to content bounds')
+    parser.add_argument('--tight', action='store_true', help='Zero gaps between panels')
+    parser.add_argument('--gap-ratio', type=float, help='Gap as ratio of panel size (e.g., 0.02 = 2%%)')
     
     # Label options
     parser.add_argument('--add-panel-label', action='store_true', help='Add panel labels')
