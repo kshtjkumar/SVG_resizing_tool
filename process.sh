@@ -28,6 +28,7 @@ ALIGN_XSPINE=false
 ALIGN_YSPINE=false
 AUTO_MATCH_SCALE=false
 CROP=false
+SKIP_BACKGROUND=false
 TIGHT=false
 GAP_RATIO=""
 
@@ -72,6 +73,7 @@ OPTIONS:
     --label-first <char>       First label character (default: 'a')
     --label-size <px>          Label font size (default: 12)
     --crop                     Auto-crop panels to content bounds (only for --combine)
+    --skip-background          Skip white background rectangles when cropping (enabled by default with --crop)
     --tight                    Zero gaps between panels (only for --combine)
     --gap-ratio <ratio>        Gap as ratio of panel size, e.g., 0.02 = 2% (only for --combine)
     --align                    Enable post-processing alignment
@@ -233,6 +235,10 @@ while [[ $# -gt 0 ]]; do
             CROP=true
             shift
             ;;
+        --skip-background)
+            SKIP_BACKGROUND=true
+            shift
+            ;;
         --tight)
             TIGHT=true
             shift
@@ -335,6 +341,9 @@ if [ "$COMBINE" = true ]; then
     fi
     if [ "$CROP" = true ]; then
         CMD_ARRAY+=(--crop)
+    fi
+    if [ "$SKIP_BACKGROUND" = true ]; then
+        CMD_ARRAY+=(--skip-background)
     fi
     if [ "$TIGHT" = true ]; then
         CMD_ARRAY+=(--tight)

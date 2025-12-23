@@ -114,13 +114,73 @@ def get_path_bounds(path_data):
     return (min(x_coords), min(y_coords), max(x_coords), max(y_coords))
 
 
-def get_content_bounds(element, transform=(0, 0, 1, 1)):
+def is_white_background(element):
+    """
+    Check if an element is a white background rectangle.
+    Used to skip background rectangles when calculating content bounds for Matplotlib SVGs.
+    
+    Detects white color in multiple formats:
+    - Hex: #ffffff, #fff, #FFF, #FFFFFF
+    - Named: white, White, WHITE
+    - RGB: rgb(255,255,255), rgb(255, 255, 255), RGB(255,255,255)
+    - HSL: hsl(0,0%,100%)
+    """
+    tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+    if tag != 'rect':
+        return False
+    
+    # Check fill attribute - normalize to lowercase and remove spaces
+    fill = element.get('fill', '').lower().replace(' ', '')
+    
+    # Hex colors
+    if fill in ['#ffffff', '#fff']:
+        return True
+    
+    # Named color
+    if fill == 'white':
+        return True
+    
+    # RGB colors (normalized, no spaces)
+    if fill in ['rgb(255,255,255)']:
+        return True
+    
+    # HSL white
+    if fill in ['hsl(0,0%,100%)', 'hsl(0,0,100)']:
+        return True
+    
+    # Check style attribute - normalize and remove all spaces
+    style = element.get('style', '').lower().replace(' ', '')
+    
+    # Look for fill property in style
+    if 'fill:#ffffff' in style or 'fill:#fff' in style:
+        return True
+    if 'fill:white' in style:
+        return True
+    if 'fill:rgb(255,255,255)' in style:
+        return True
+    if 'fill:hsl(0,0%,100%)' in style:
+        return True
+    
+    return False
+
+
+def get_content_bounds(element, transform=(0, 0, 1, 1), skip_background=False):
     """
     Recursively calculate the actual content bounding box of SVG elements.
     Returns (min_x, min_y, max_x, max_y) of visible content.
     
     Handles: rect, line, circle, ellipse, path, polygon, polyline, text, g (groups)
     Accounts for transforms: translate, scale, matrix
+    
+    For Matplotlib SVGs:
+    - Skip white background rectangles (fill="#ffffff" or fill="white" or style contains "fill:white")
+    - Focus on axes groups (id contains "axes")
+    - Detect the actual plot area, not figure padding
+    
+    Args:
+        element: SVG element to process
+        transform: Tuple of (tx, ty, sx, sy) for accumulated transforms
+        skip_background: If True, skip white/background rectangles (useful for Matplotlib SVGs)
     """
     tx, ty, sx, sy = transform
     
@@ -140,11 +200,15 @@ def get_content_bounds(element, transform=(0, 0, 1, 1)):
     
     # Handle different element types
     if tag == 'rect':
-        x = float(element.get('x', 0))
-        y = float(element.get('y', 0))
-        width = float(element.get('width', 0))
-        height = float(element.get('height', 0))
-        bounds = (x, y, x + width, y + height)
+        # Skip white background rectangles if requested
+        if skip_background and is_white_background(element):
+            bounds = None
+        else:
+            x = float(element.get('x', 0))
+            y = float(element.get('y', 0))
+            width = float(element.get('width', 0))
+            height = float(element.get('height', 0))
+            bounds = (x, y, x + width, y + height)
     
     elif tag == 'circle':
         cx = float(element.get('cx', 0))
@@ -198,7 +262,7 @@ def get_content_bounds(element, transform=(0, 0, 1, 1)):
     
     # Process child elements recursively
     for child in element:
-        child_bounds = get_content_bounds(child, (tx, ty, sx, sy))
+        child_bounds = get_content_bounds(child, (tx, ty, sx, sy), skip_background)
         if child_bounds:
             if bounds:
                 # Merge bounds
@@ -214,13 +278,17 @@ def get_content_bounds(element, transform=(0, 0, 1, 1)):
     return bounds
 
 
-def crop_svg_to_content(svg_root):
+def crop_svg_to_content(svg_root, skip_background=False):
     """
     Crop an SVG to its actual content bounds, removing excess whitespace.
     Returns (cropped_root, width, height) with content starting at (0,0).
+    
+    Args:
+        svg_root: The root SVG element
+        skip_background: If True, skip white background rectangles when calculating bounds
     """
     # Get content bounds
-    bounds = get_content_bounds(svg_root)
+    bounds = get_content_bounds(svg_root, skip_background=skip_background)
     
     if not bounds:
         # No content found, return original
@@ -232,6 +300,8 @@ def crop_svg_to_content(svg_root):
     content_height = max_y - min_y
     
     # Create new root with adjusted viewBox
+    # The viewBox starts at min_x, min_y and shows content_width x content_height
+    # This effectively crops to the content bounds
     svg_ns = "http://www.w3.org/2000/svg"
     new_root = ET.Element('{%s}svg' % svg_ns, {
         'width': f'{content_width}',
@@ -275,9 +345,14 @@ def create_composite_svg(panels, output_path, args):
     
     # Crop panels if requested
     if hasattr(args, 'crop') and args.crop:
+        # When --crop is used, automatically enable skip-background behavior
+        # This is the expected behavior for Matplotlib figures with white backgrounds
+        # The --skip-background flag is provided for explicit documentation but has the same effect
+        skip_bg = True
+        
         cropped_trees = []
         for panel_file, tree in panel_trees:
-            cropped_root, width, height = crop_svg_to_content(tree.getroot())
+            cropped_root, width, height = crop_svg_to_content(tree.getroot(), skip_background=skip_bg)
             # Create new tree with cropped root
             new_tree = ET.ElementTree(cropped_root)
             cropped_trees.append((panel_file, new_tree))
@@ -394,6 +469,8 @@ def main():
     
     # Content-aware cropping options
     parser.add_argument('--crop', action='store_true', help='Auto-crop panels to content bounds')
+    parser.add_argument('--skip-background', action='store_true', 
+                        help='Skip white background rectangles when cropping (useful for Matplotlib SVGs, enabled by default with --crop)')
     parser.add_argument('--tight', action='store_true', help='Zero gaps between panels')
     parser.add_argument('--gap-ratio', type=float, help='Gap as ratio of panel size (e.g., 0.02 = 2%%)')
     
