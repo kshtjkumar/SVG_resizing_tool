@@ -118,20 +118,47 @@ def is_white_background(element):
     """
     Check if an element is a white background rectangle.
     Used to skip background rectangles when calculating content bounds for Matplotlib SVGs.
+    
+    Detects white color in multiple formats:
+    - Hex: #ffffff, #fff, #FFF, #FFFFFF
+    - Named: white, White, WHITE
+    - RGB: rgb(255,255,255), rgb(255, 255, 255), RGB(255,255,255)
+    - HSL: hsl(0,0%,100%)
     """
     tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
     if tag != 'rect':
         return False
     
-    # Check fill attribute
-    fill = element.get('fill', '').lower()
-    if fill in ['#ffffff', '#fff', 'white', 'rgb(255,255,255)', 'rgb(255, 255, 255)']:
+    # Check fill attribute - normalize to lowercase and remove spaces
+    fill = element.get('fill', '').lower().replace(' ', '')
+    
+    # Hex colors
+    if fill in ['#ffffff', '#fff']:
         return True
     
-    # Check style attribute
-    style = element.get('style', '').lower()
-    if 'fill:#ffffff' in style.replace(' ', '') or 'fill:#fff' in style.replace(' ', '') or \
-       'fill:white' in style.replace(' ', '') or 'fill:rgb(255,255,255)' in style.replace(' ', ''):
+    # Named color
+    if fill == 'white':
+        return True
+    
+    # RGB colors (normalized, no spaces)
+    if fill in ['rgb(255,255,255)']:
+        return True
+    
+    # HSL white
+    if fill in ['hsl(0,0%,100%)', 'hsl(0,0,100)']:
+        return True
+    
+    # Check style attribute - normalize and remove all spaces
+    style = element.get('style', '').lower().replace(' ', '')
+    
+    # Look for fill property in style
+    if 'fill:#ffffff' in style or 'fill:#fff' in style:
+        return True
+    if 'fill:white' in style:
+        return True
+    if 'fill:rgb(255,255,255)' in style:
+        return True
+    if 'fill:hsl(0,0%,100%)' in style:
         return True
     
     return False
