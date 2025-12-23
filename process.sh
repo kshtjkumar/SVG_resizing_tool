@@ -87,6 +87,8 @@ EXAMPLES:
 
     # Interactive mode (will prompt for options)
     $0 --interactive
+    # or use short form:
+    $0 -i
 
 EOF
 }
@@ -280,33 +282,6 @@ print_success "Found $SVG_COUNT SVG file(s) in input/"
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
-# Build common arguments
-COMMON_ARGS=""
-if [ -n "$PUBLISHER" ]; then
-    COMMON_ARGS="$COMMON_ARGS --outer-publisher $PUBLISHER"
-fi
-if [ -n "$LAYOUT" ]; then
-    COMMON_ARGS="$COMMON_ARGS --outer-layout $LAYOUT"
-fi
-
-# Build additional arguments for main.py (combine mode)
-MAIN_ARGS="$COMMON_ARGS"
-if [ "$ADD_LABELS" = true ]; then
-    MAIN_ARGS="$MAIN_ARGS --add-panel-label --panel-label-first $LABEL_FIRST --panel-label-font-size $LABEL_SIZE"
-fi
-if [ "$ALIGN" = true ]; then
-    MAIN_ARGS="$MAIN_ARGS --align --align-mode $ALIGN_MODE"
-    if [ "$ALIGN_XSPINE" = true ]; then
-        MAIN_ARGS="$MAIN_ARGS --align-xspine-equalize"
-    fi
-    if [ "$ALIGN_YSPINE" = true ]; then
-        MAIN_ARGS="$MAIN_ARGS --align-yspine-equalize"
-    fi
-    if [ "$AUTO_MATCH_SCALE" = true ]; then
-        MAIN_ARGS="$MAIN_ARGS --auto-match-scale"
-    fi
-fi
-
 # Process files
 echo ""
 if [ "$COMBINE" = true ]; then
@@ -315,13 +290,42 @@ if [ "$COMBINE" = true ]; then
     
     OUTPUT_FILE="$OUTPUT_DIR/combined_output.svg"
     
-    # Build command
-    CMD="python3 \"$SCRIPT_DIR/main.py\" \"$INPUT_DIR\"/*.svg --output \"$OUTPUT_FILE\" --max-per-row $MAX_PER_ROW --col-gap $COL_GAP --row-gap $ROW_GAP --outer-pad $OUTER_PAD $MAIN_ARGS"
+    # Build command as array (safer than eval)
+    CMD_ARRAY=(python3 "$SCRIPT_DIR/main.py")
+    for svg_file in "$INPUT_DIR"/*.svg; do
+        if [ -f "$svg_file" ]; then
+            CMD_ARRAY+=("$svg_file")
+        fi
+    done
+    CMD_ARRAY+=(--output "$OUTPUT_FILE" --max-per-row "$MAX_PER_ROW" --col-gap "$COL_GAP" --row-gap "$ROW_GAP" --outer-pad "$OUTER_PAD")
+    
+    # Add optional arguments
+    if [ -n "$PUBLISHER" ]; then
+        CMD_ARRAY+=(--outer-publisher "$PUBLISHER")
+    fi
+    if [ -n "$LAYOUT" ]; then
+        CMD_ARRAY+=(--outer-layout "$LAYOUT")
+    fi
+    if [ "$ADD_LABELS" = true ]; then
+        CMD_ARRAY+=(--add-panel-label --panel-label-first "$LABEL_FIRST" --panel-label-font-size "$LABEL_SIZE")
+    fi
+    if [ "$ALIGN" = true ]; then
+        CMD_ARRAY+=(--align --align-mode "$ALIGN_MODE")
+        if [ "$ALIGN_XSPINE" = true ]; then
+            CMD_ARRAY+=(--align-xspine-equalize)
+        fi
+        if [ "$ALIGN_YSPINE" = true ]; then
+            CMD_ARRAY+=(--align-yspine-equalize)
+        fi
+        if [ "$AUTO_MATCH_SCALE" = true ]; then
+            CMD_ARRAY+=(--auto-match-scale)
+        fi
+    fi
     
     print_info "Running: main.py with $SVG_COUNT input file(s)"
     
     # Execute command
-    if eval $CMD; then
+    if "${CMD_ARRAY[@]}"; then
         print_success "Composite SVG created: $OUTPUT_FILE"
     else
         print_error "Failed to create composite SVG"
@@ -373,11 +377,17 @@ else
             
             print_info "Processing: $filename"
             
-            # Build command for single file
-            CMD="python3 \"$SCRIPT_DIR/panel_frame_fit.py\" \"$svg_file\" --output \"$output_file\" $COMMON_ARGS"
+            # Build command as array (safer than eval)
+            CMD_ARRAY=(python3 "$SCRIPT_DIR/panel_frame_fit.py" "$svg_file" --output "$output_file")
+            if [ -n "$PUBLISHER" ]; then
+                CMD_ARRAY+=(--outer-publisher "$PUBLISHER")
+            fi
+            if [ -n "$LAYOUT" ]; then
+                CMD_ARRAY+=(--outer-layout "$LAYOUT")
+            fi
             
-            # Execute command
-            if eval $CMD 2>&1 | grep -v "^$"; then
+            # Execute command and check exit status
+            if "${CMD_ARRAY[@]}"; then
                 print_success "  Saved to: $output_file"
                 PROCESSED=$((PROCESSED + 1))
             else

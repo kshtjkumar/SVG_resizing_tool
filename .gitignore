@@ -42,3 +42,6 @@ htmlcov/
 *.log
 output_panels/
 final_figure.svg
+
+# Output directory - ignore SVG files but keep .gitkeep
+output/*.svg
