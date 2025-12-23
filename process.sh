@@ -27,6 +27,9 @@ ALIGN_MODE="xlabel"
 ALIGN_XSPINE=false
 ALIGN_YSPINE=false
 AUTO_MATCH_SCALE=false
+CROP=false
+TIGHT=false
+GAP_RATIO=""
 
 # Script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -68,6 +71,9 @@ OPTIONS:
     --outer-pad <px>           Outer padding in pixels (default: 10)
     --label-first <char>       First label character (default: 'a')
     --label-size <px>          Label font size (default: 12)
+    --crop                     Auto-crop panels to content bounds (only for --combine)
+    --tight                    Zero gaps between panels (only for --combine)
+    --gap-ratio <ratio>        Gap as ratio of panel size, e.g., 0.02 = 2% (only for --combine)
     --align                    Enable post-processing alignment
     --align-mode <mode>        Alignment mode: xlabel or patch-bottom (default: xlabel)
     --align-xspine             Equalize x-axis spine lengths
@@ -84,6 +90,12 @@ EXAMPLES:
 
     # Combine all into one composite with labels
     $0 --combine --publisher nature --layout double --labels
+    
+    # Combine with content-aware cropping and tight spacing
+    $0 --combine --crop --tight --publisher ieee-trans --layout double --labels
+    
+    # Combine with proportional gaps (2% of panel size)
+    $0 --combine --crop --gap-ratio 0.02 --publisher ieee-trans --layout double --labels
 
     # Interactive mode (will prompt for options)
     $0 --interactive
@@ -217,6 +229,18 @@ while [[ $# -gt 0 ]]; do
             AUTO_MATCH_SCALE=true
             shift
             ;;
+        --crop)
+            CROP=true
+            shift
+            ;;
+        --tight)
+            TIGHT=true
+            shift
+            ;;
+        --gap-ratio)
+            GAP_RATIO="$2"
+            shift 2
+            ;;
         --interactive|-i)
             INTERACTIVE=true
             shift
@@ -308,6 +332,15 @@ if [ "$COMBINE" = true ]; then
     fi
     if [ "$ADD_LABELS" = true ]; then
         CMD_ARRAY+=(--add-panel-label --panel-label-first "$LABEL_FIRST" --panel-label-font-size "$LABEL_SIZE")
+    fi
+    if [ "$CROP" = true ]; then
+        CMD_ARRAY+=(--crop)
+    fi
+    if [ "$TIGHT" = true ]; then
+        CMD_ARRAY+=(--tight)
+    fi
+    if [ -n "$GAP_RATIO" ]; then
+        CMD_ARRAY+=(--gap-ratio "$GAP_RATIO")
     fi
     if [ "$ALIGN" = true ]; then
         CMD_ARRAY+=(--align --align-mode "$ALIGN_MODE")
