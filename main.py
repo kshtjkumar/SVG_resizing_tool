@@ -345,9 +345,10 @@ def create_composite_svg(panels, output_path, args):
     
     # Crop panels if requested
     if hasattr(args, 'crop') and args.crop:
-        # Determine if we should skip background
-        # When --crop is used, automatically enable --skip-background unless explicitly disabled
-        skip_bg = getattr(args, 'skip_background', True)  # Default to True when cropping
+        # When --crop is used, automatically enable skip-background behavior
+        # This is the expected behavior for Matplotlib figures with white backgrounds
+        # The --skip-background flag is provided for explicit documentation but has the same effect
+        skip_bg = True
         
         cropped_trees = []
         for panel_file, tree in panel_trees:
