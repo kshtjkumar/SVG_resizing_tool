@@ -22,12 +22,51 @@ A comprehensive Python toolkit for extracting, aligning, and compositing Matplot
 git clone https://github.com/kshtjkumar/SVG_resizing_tool.git
 cd SVG_resizing_tool
 chmod +x run_example.sh
+chmod +x process.sh
 ```
 
 ## Quick Start
 
+### Simplified Workflow (Recommended for Beginners)
+
+The easiest way to use this tool is with the automated batch processing script:
+
+1. **Add your SVG files** to the `input/` folder
+2. **Run the processing script**:
+   ```bash
+   ./process.sh
+   ```
+3. **Get your processed files** from the `output/` folder
+
+#### Examples
+
 ```bash
-# Assemble panels into IEEE double-column figure
+# Process all SVGs individually with default settings
+./process.sh
+
+# Process with publisher specifications
+./process.sh --publisher ieee-trans --layout single
+
+# Combine all SVGs into one composite figure with labels
+./process.sh --combine --publisher nature --layout double --labels
+
+# Interactive mode - prompts you for all options
+./process.sh --interactive
+
+# Full control with all options
+./process.sh --combine --publisher ieee-trans --layout double --labels \
+  --max-per-row 2 --col-gap 10 --row-gap 10
+```
+
+For more options, run `./process.sh --help`
+
+### Advanced Usage (Manual Control)
+
+For advanced users who want full control over the processing pipeline:
+
+#### Assemble Multiple Panels
+
+```bash
 python3 main.py output_panels/panel_*.svg \
   --output final_figure.svg \
   --outer-publisher ieee-trans \
@@ -46,7 +85,16 @@ python3 main.py output_panels/panel_*.svg \
   --align-yspine-equalize
 ```
 
-## Usage
+#### Process Single Panel
+
+```bash
+python3 panel_frame_fit.py panel.svg \
+  --outer-publisher ieee-trans \
+  --outer-layout single \
+  --output framed.svg
+```
+
+## Detailed Usage
 
 ### Main Assembly Pipeline (`main.py`)
 
